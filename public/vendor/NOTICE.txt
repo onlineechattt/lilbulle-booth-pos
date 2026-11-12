@@ -1,0 +1,9 @@
+Locally served barcode decoder (loaded only on camera/photo use)
+
+@zxing/browser 0.2.1 — MIT — https://github.com/zxing-js/browser
+@zxing/library — Apache-2.0 — https://github.com/zxing-js/library
+ts-custom-error — MIT — https://github.com/adriengibrat/ts-custom-error
+
+zxing-browser.min.js is copied unmodified from the npm distribution of @zxing/browser 0.2.1.
+See the included license files for the browser layer and its bundled dependencies.
+package-lock.json records the exact development dependency graph and integrity values.

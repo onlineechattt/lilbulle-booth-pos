@@ -1,0 +1,9 @@
+node_modules/
+test-results/
+.env
+.env.*
+!.env.example
+playwright-report/
+.netlify/
+# Local-only ledger fixtures; not approved for publication by automatic review.
+tests/scoped-gas.test.mjs
