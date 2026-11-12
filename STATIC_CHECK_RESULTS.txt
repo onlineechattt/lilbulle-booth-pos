@@ -1,0 +1,6 @@
+Code.gs: PASS
+BoothPOS_V11.gs: PASS
+POS_GAS_Bridge.gs: PASS
+POS_GAS.html inline script 1: PASS
+
+No runtime / deployment tests performed.
