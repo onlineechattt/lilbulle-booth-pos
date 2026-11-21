@@ -1,4 +1,4 @@
-// lilbulle POS proxy V12.4.0 | 2026-10-28
+// lilbulle POS proxy V12.5.0 | 2026-10-28
 import {createHmac, timingSafeEqual} from 'node:crypto';
 const json=(data,status=200,headers={})=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store',...headers}});
 const sign=(s,key)=>createHmac('sha256',key).update(s).digest('base64url');
@@ -15,10 +15,12 @@ export default async function handler(request,context={}){
   const text=await request.text();if(text.length>3100000)return json({error:'ไฟล์ใหญ่เกินไป'},413);
   const body=JSON.parse(text),action=body.action,payload=body.payload||{};
   if(action==='logout')return json({success:true},200,{'Set-Cookie':'lb_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'});
-  if(!['login','lineQuota','lineSummaryPreview','sendLineSummary','history','productImages','init','receive','sale','void','closeDay','upload','catalogSave','bundlePriceSave','retryNotify','restock','receiveRestock','stockOut'].includes(action))return json({error:'คำสั่งไม่รองรับ'},400);
+  if(!['login','lineQuota','lineSummaryPreview','sendLineSummary','history','productImages','init','receive','sale','void','closeDay','upload','catalogSave','bundlePriceSave','promotionList','promotionSave','boothPromotionPriceSave','retryNotify','restock','receiveRestock','stockOut'].includes(action))return json({error:'คำสั่งไม่รองรับ'},400);
   if(payload.boothScoped===true&&['history','productImages','receive','sale','void','closeDay','restock','receiveRestock','stockOut'].includes(action)&&!String(payload.issueNo||'').trim())return json({error:'เลือกบูธก่อนทำรายการ'},400);
   const session=readSession(request.headers.get('cookie'),key);
   if(action!=='login'&&!session)return json({error:'กรุณาเข้าสู่ระบบ'},401);
+  if(['catalogSave','bundlePriceSave','promotionList','promotionSave','boothPromotionPriceSave'].includes(action)&&session?.role!=='boss')
+   return json({error:'เฉพาะบอสเท่านั้นที่จัดการเซตได้'},403);
   if(action!=='login')payload.staff=session.staff;
   const response=await fetch(APPS_SCRIPT_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({posApi:'lilbulle-v11',apiKey:POS_API_KEY,action,payload,role:session?.role,clientKey:sign(context.ip||request.headers.get('x-nf-client-connection-ip')||'unknown',key)}),signal:AbortSignal.timeout(55000),redirect:'follow'});
   const result=await response.json();if(!result.success)return json({error:result.error||'ระบบปฏิเสธรายการ',rejected:result.rejected===true},400);

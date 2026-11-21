@@ -1,4 +1,12 @@
-# Validation — V12.4.0
+# Validation — V12.5.0
+
+V12.5 verifies that the server uses the configured promotion recipe and price, checks the displayed price and revision, requires a reason for adjustments, and rejects a complete bill when a booth has insufficient stock. Tests cover independent booth prices, restoring the global price, preservation of recorded bills, and boss authorization on the proxy.
+
+The Netlify interface and the Apps Script extension must be released together. Before publishing, finish any pending live sales and test both components with a staging Sheet. The GAS-only bridge remains available in repository history as a reference. The V12.5 Apps Script extension is distributed in the owner's local ZIP.
+
+Local verification on synthetic data passed 13 Node checks and the headless Chrome smoke test, including boss and team menus, creation of a set, a booth-only price and restoring its global price. No live sales or inventory were used in these checks.
+
+## V12.4 baseline
 
 Source baseline: onlineechattt/AI @ 2acf0652c3b71b98c20f0dcc768c7f438d87039a.
 

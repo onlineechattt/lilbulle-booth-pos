@@ -13,7 +13,7 @@ const root=path.resolve('public'),output=path.resolve('test-results');fs.mkdirSy
 const html=fs.readFileSync(root+'/index.html','utf8');const errors=[],calls=[],assets=[];
 let snapshots=0,sales=[],failSale=false;
 const products=[{sku:'balm',name:'Test Product A',price:10,barcode:'8850000000010',imageVersion:'1'},{sku:'foam',name:'Test Product B',price:20,barcode:'8805000000010',imageVersion:'1'},{sku:'spray',name:'Test Product C',price:5,barcode:'8850000000027',imageVersion:'1'}];
-function snapshot(issue){return {scoped:true,version:'11.4.1',appVersion:'12.4.0',notificationPolicy:'MANUAL_SUMMARY',products:issue?products.filter(p=>issue==='A'?p.sku!=='spray':p.sku==='spray'):[],booths:issue?[]:[{id:'A',name:'Test Booth A'},{id:'B',name:'Test Booth B'}],bundlePrices:[],warehouse:[],pendingNotifications:0,historyLimit:20,state:issue?{id:issue,name:'Test Booth '+issue,day:'2026-11-12',received:true,closed:false,dayClosed:false,lots:(issue==='A'?['balm','foam']:['spray']).map(sku=>({key:sku+'|31/12/2028',sku,exp:'31/12/2028',remaining:24})),pendingRestocks:[],movements:[],closes:[],lineSummaries:[]}:null,summary:issue?{total:0,bills:0,sales:[],products:[],money:{CASH:0,TRANSFER:0,CARD:0,OTHER:0}}:null};}
+function snapshot(issue){return {scoped:true,saleContract:2,version:'11.4.1',appVersion:'12.5.0',notificationPolicy:'MANUAL_SUMMARY',products:issue?products.filter(p=>issue==='A'?p.sku!=='spray':p.sku==='spray'):[],booths:issue?[]:[{id:'A',name:'Test Booth A'},{id:'B',name:'Test Booth B'}],bundlePrices:[],warehouse:[],pendingNotifications:0,historyLimit:20,state:issue?{id:issue,name:'Test Booth '+issue,day:'2026-11-12',received:true,closed:false,dayClosed:false,lots:(issue==='A'?['balm','foam']:['spray']).map(sku=>({key:sku+'|31/12/2028',sku,exp:'31/12/2028',remaining:24})),pendingRestocks:[],movements:[],closes:[],lineSummaries:[]}:null,summary:issue?{total:0,bills:0,sales:[],products:[],money:{CASH:0,TRANSFER:0,CARD:0,OTHER:0}}:null};}
 const server=http.createServer((req,res)=>{
  const url=new URL(req.url,'http://localhost');
  if(url.pathname==='/api/pos'){let body='';req.on('data',b=>body+=b);req.on('end',()=>{const {action,payload}=JSON.parse(body);calls.push({action,payload});let result;
@@ -62,14 +62,46 @@ try{
  // Permission may resolve after the user closes the scanner; that late stream must be stopped too.
  assert(await page.evaluate(async()=>{const {createCameraScanner}=await import('/barcode-camera.js');const scanner=createCameraScanner();let release;const stream=window.__scanCanvas.captureStream(10);navigator.mediaDevices.getUserMedia=()=>new Promise(r=>release=r);const pending=scanner.start(document.getElementById('barcodeVideo'),()=>{});scanner.stop();release(stream);await pending;return stream.getTracks().every(t=>t.readyState==='ended');}));
  await page.screenshot({path:output+'/desktop.png',fullPage:true});await page.setViewportSize({width:390,height:844});await page.screenshot({path:output+'/mobile.png',fullPage:true});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
- // Owner chose no public payment QR: transfer UI shows the amount and physical-booth instructions only.
- await page.selectOption('#payment','TRANSFER');await page.click('#showPaymentQR');assert.equal(await page.locator('#dialogBody img').count(),0);assert((await page.locator('#dialogBody').innerText()).includes('ป้าย QR'));await page.click('#dialogClose');await page.selectOption('#payment','CASH');
+ // The transfer dialog displays the amount without images.
+ await page.selectOption('#payment','TRANSFER');await page.click('#showTransferAmount');assert.equal(await page.locator('#dialogBody img').count(),0);assert((await page.locator('#dialogBody').innerText()).includes('ตรวจชื่อผู้รับและยอดโอน'));await page.click('#dialogClose');await page.selectOption('#payment','CASH');
  // Unknown sale response retains the same request; retry cannot create a second sale.
- failSale=true;await page.click('#pay');await page.waitForFunction(()=>!document.getElementById('pending').hidden&&!document.getElementById('retryPending').disabled);assert(await page.locator('#barcodeInput').isDisabled());const first=calls.filter(c=>c.action==='sale').at(-1).payload.requestId;await page.click('#retryPending');await page.waitForFunction(()=>document.getElementById('pending').hidden);assert.equal(sales.length,1);assert.equal(calls.filter(c=>c.action==='sale').at(-1).payload.requestId,first);
+ failSale=true;await page.click('#pay');await page.waitForFunction(()=>!document.getElementById('pending').hidden&&!document.getElementById('retryPending').disabled);assert(await page.locator('#barcodeInput').isDisabled());const first=calls.filter(c=>c.action==='sale').at(-1).payload.requestId;await page.click('#retryPending');await page.waitForFunction(()=>document.getElementById('pending').hidden);assert.equal(sales.length,1);assert(sales[0].payload.saleLines.length>0);assert(!('items' in sales[0].payload));assert.equal(calls.filter(c=>c.action==='sale').at(-1).payload.requestId,first);
  // Histories stay selected-event-only; they are never preloaded with init.
  assert(!calls.some(c=>c.action==='history'));await page.click('#salesHistoryBtn');await page.waitForSelector('#histBooth option[value=A]',{state:'attached'});assert(await page.locator('#histBooth').isDisabled());assert(calls.filter(c=>c.action==='history').every(c=>c.payload.issueNo==='A'));await page.click('#dialogClose');
  // No LINE messages until explicit preview/send, then preserve the existing manual path.
  assert(!calls.some(c=>c.action==='sendLineSummary'));await page.click('#sendLineSummaryBtn');await page.waitForFunction(()=>!document.getElementById('confirmManualLine').disabled);assert(!calls.some(c=>c.action==='sendLineSummary'));await page.click('#confirmManualLine');await page.waitForFunction(()=>document.getElementById('manualLineInfo').textContent.includes('ส่งแล้ว'));assert.equal(calls.filter(c=>c.action==='sendLineSummary').length,1);await page.click('#dialogClose');
  await page.selectOption('#booth','B');await page.waitForFunction(()=>document.querySelectorAll('#products button').length===1&&!document.getElementById('barcodeAdd').disabled);await page.fill('#barcodeInput','0010');await page.press('#barcodeInput','Enter');assert((await page.locator('#barcodeStatus').innerText()).includes('ไม่พบ'));assert.equal(await page.locator('#cartRows .cart-line').count(),0);
- assert.equal(errors.length,0,errors.join('\n'));console.log('PASS: browser exact/suffix/ambiguous/foreign matches, real EAN photo and canvas-camera fallback, permission denial, camera stop, no scan RPC, scoped image/history, request-id retry, explicit LINE only, mobile layout');
+ await page.click('#settingsBtn');
+ assert.equal(await page.locator('#bundlePricesBtn').count(),0);
+ await page.click('#dialogClose');
+ const demo=await browser.newPage();
+ await demo.route('**/api/pos',route=>route.fulfill({status:401,json:{error:'Login required'}}));
+ await demo.goto(page.url());
+ await demo.click('#demoBtn');
+ await demo.click('#settingsBtn');
+ await demo.click('#bundlePricesBtn');
+ await demo.selectOption('#promoScope','global');
+ await demo.fill('#promoName','Test Pair');
+ await demo.fill('#promoPrice','123.45');
+ await demo.fill('[data-promo-sku=balm]','1');
+ await demo.fill('[data-promo-sku=mozzie]','1');
+ await demo.click('#promoSave');
+ await demo.waitForSelector('#actionDialog',{state:'hidden'});
+ const fixtureId=await demo.locator('#bundleButtons button').filter({hasText:'Test Pair'}).getAttribute('data-bundle');
+ await demo.click('#settingsBtn');
+ await demo.click('#bundlePricesBtn');
+ await demo.selectOption('#promoChoice',fixtureId);
+ assert.equal(await demo.inputValue('#promoPrice'),'123.45');
+ await demo.fill('#promoPrice','111.25');
+ await demo.click('#promoSave');
+ await demo.waitForSelector('#actionDialog',{state:'hidden'});
+ assert((await demo.locator('#bundleButtons button').filter({hasText:'Test Pair'}).innerText()).includes('111.25'));
+ await demo.click('#settingsBtn');
+ await demo.click('#bundlePricesBtn');
+ await demo.selectOption('#promoChoice',fixtureId);
+ await demo.click('#promoResetPrice');
+ await demo.waitForSelector('#actionDialog',{state:'hidden'});
+ assert((await demo.locator('#bundleButtons button').filter({hasText:'Test Pair'}).innerText()).includes('123.45'));
+ await demo.close();
+ assert.equal(errors.length,0,errors.join('\n'));console.log('PASS: booth barcode, idempotent sale request, manual LINE, boss promotion UI, booth price and global fallback');
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

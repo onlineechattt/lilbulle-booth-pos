@@ -1,10 +1,34 @@
 import {lbHistoryRows_} from './sales-history.js';
+import {bundles,expandCart} from './bundles.js';
+function demoPromotions(db,issue){
+ const overrides=db.boothPrices||{};
+ return (db.promotions||bundles).map(p=>{
+  const local=issue?overrides[p.id]:undefined;
+  return {...p,active:p.active??true,revision:p.revision||'',boothRevision:local?.revision||'',
+   globalPrice:p.price,price:local?.price??p.price,hasOverride:local?.price!=null};
+ });
+}
 export const demoProducts=[{sku:'balm',barcode:'0000000000017',name:'Baby Rich Balm',price:290,image:''},{sku:'lotion',barcode:'0000000000024',name:'Organic Lotion',price:390,image:''},{sku:'foam',barcode:'0000000000031',name:'Baby Foam',price:350,image:''},{sku:'mozzie',barcode:'0000000000048',name:'Mozzie Guard',price:190,image:''},{sku:'spray',barcode:'0000000000055',name:'Sanitizer Spray',price:150,image:''}];
 export const day=()=>new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Bangkok'});
 export function seed(){return {products:structuredClone(demoProducts),booths:[{id:'DEMO-BOOTH',name:'ร้านตัวอย่าง · Baby Fair',location:'ข้อมูลสมมติสำหรับทดลอง'}],received:false,events:[],lots:demoProducts.map(p=>({key:p.sku+'|31/12/2028',sku:p.sku,exp:'31/12/2028',issued:24,returned:0,sold:0,remaining:24}))};}
 export function demoRun(db,action,p={}){
  if(action==='history')return lbHistoryRows_(db.events,db.booths,p);
- if(action==='init')return snapshot(db,p.issueNo);
+ if(action==='init')return {...snapshot(db,p.issueNo),promotions:demoPromotions(db,p.issueNo)};
+ if(action==='promotionList')return {products:db.products,promotions:demoPromotions(db,p.scopeIssue)};
+ if(action==='promotionSave'){
+  db.promotions??=structuredClone(bundles);
+  const id=p.id||p.createId;
+  const index=db.promotions.findIndex(x=>x.id===id);
+  const promo={id,name:p.name,price:p.price,components:p.components,active:p.active,revision:crypto.randomUUID()};
+  if(index<0)db.promotions.push(promo);
+  else db.promotions[index]=promo;
+  return {success:true};
+ }
+ if(action==='boothPromotionPriceSave'){
+  db.boothPrices??={};
+  db.boothPrices[p.id]={price:p.price,revision:crypto.randomUUID()};
+  return {success:true};
+ }
  if(action==='catalogSave'){const product=db.products.find(x=>x.sku===p.sku);Object.assign(product,{price:Number(p.price),image:p.image});return {success:true};}
  if(action==='retryNotify')return {success:true};
  if(action==='upload')return {success:true,id:'DEMO-PHOTO',data:{image:p.kind==='product'?`data:${p.mime};base64,${p.base64}`:'',url:''}};
@@ -24,7 +48,25 @@ export function demoRun(db,action,p={}){
  else if(!db.received)throw Error('ตรวจรับก่อนขาย');
  else if(action==='sale'){
  const stock=structuredClone(state.lots),lines=[];let total=0;
- for(const x of p.items){if(!Number.isInteger(x.qty)||x.qty<=0||!Number.isFinite(x.price)||x.price<=0)throw Error('จำนวนหรือราคาไม่ถูกต้อง');const lot=stock.find(l=>l.sku===x.sku);if(!lot||x.qty>lot.remaining)throw Error('สินค้าไม่พอ');lot.remaining-=x.qty;lines.push({key:lot.key,sku:x.sku,name:db.products.find(y=>y.sku===x.sku).name,qty:x.qty,exp:lot.exp,price:x.price});total+=x.qty*x.price;}
+ const promos=demoPromotions(db,p.issueNo);
+ const items=p.saleLines?expandCart(p.saleLines.map(row=>{
+  if(!row.promotionId)return row;
+  const promo=promos.find(x=>x.id===row.promotionId&&x.active);
+  if(!promo)throw Error('เซตนี้ปิดขายแล้ว');
+  return {...row,components:promo.components};
+ })):p.items;
+ for(const x of items){
+  let remaining=x.qty;
+  for(const lot of stock.filter(l=>l.sku===x.sku&&l.remaining>0)){
+   const qty=Math.min(remaining,lot.remaining);
+   if(!qty)break;
+   remaining-=qty;
+   lot.remaining-=qty;
+   lines.push({key:lot.key,sku:x.sku,name:db.products.find(y=>y.sku===x.sku).name,qty,exp:lot.exp,price:x.price});
+  }
+  if(remaining)throw Error('สินค้าไม่พอ');
+  total+=x.qty*x.price;
+ }
  data={lines,payment:p.payment,total:Math.round(total*100)/100,note:p.note,photoId:p.photoId};type='SALE';
  }else if(action==='void'){const sale=state.sales.find(e=>e.id===p.billId);if(!sale||sale.day!==day())throw Error('ยกเลิกไม่ได้');data={billId:p.billId,note:p.note};type='VOID';}
  else if(action==='closeDay'){if(p.counts.length!==state.lots.length)throw Error('นับให้ครบ');const summary=snapshot(db,p.issueNo).summary;const counts=p.counts.map(c=>({...c,expected:state.lots.find(l=>l.key===c.key).remaining}));delete summary.sales;data={summary,counts,actualMoney:p.money};type='CLOSE';}
